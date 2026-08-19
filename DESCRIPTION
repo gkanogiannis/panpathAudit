@@ -1,0 +1,35 @@
+Package: panpathAudit
+Type: Package
+Title: Audit Sequence Preservation in GFA Traversals
+Version: 0.99.0
+Authors@R: person(
+    "Anestis", "Gkanogiannis",
+    email = "ganoyan@gmail.com",
+    role = c("aut", "cre", "cph")
+  )
+Description: Audits source FASTA sequences against named paths and
+    coordinate-aware walks in GFA files. It reports exact recovery,
+    divergence coordinates, digests, and optional base-level statistics.
+    Graph topology is not validated.
+License: Apache License (>= 2)
+Encoding: UTF-8
+Depends: R (>= 4.6.0)
+Imports:
+    methods,
+    Rcpp,
+    S4Vectors
+LinkingTo: Rcpp
+Suggests:
+    BiocCheck,
+    BiocStyle,
+    knitr,
+    rmarkdown,
+    testthat (>= 3.0.0)
+VignetteBuilder: knitr
+SystemRequirements: C++20, zlib
+biocViews: Alignment, DataImport, GenomeAssembly, Genetics, Sequencing
+URL: https://github.com/gkanogiannis/panpathAudit
+BugReports: https://github.com/gkanogiannis/panpathAudit/issues
+NeedsCompilation: yes
+RoxygenNote: 8.1.0
+Config/testthat/edition: 3

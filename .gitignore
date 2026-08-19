@@ -1,0 +1,9 @@
+/cpp-port/
+/data
+HANDOFF.md
+/*.tar.gz
+src/*.o
+src/*.so
+src/*.dll
+src/vendor/**/*.o
+src/symbols.rds

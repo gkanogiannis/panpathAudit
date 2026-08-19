@@ -1,0 +1,16 @@
+^\.git$
+^\.github$
+^\.gitattributes$
+^\.gitignore$
+^\.editorconfig$
+^\.pre-commit-config\.yaml$
+^.*\.Rproj$
+^\.Rhistory$
+^\.Rproj\.user$
+^\.vscode$
+^\.claude$
+^data$
+^README\.html$
+^README\.Rmd$
+^.*\.tar\.gz$
+\\.*\\.DS_Store$

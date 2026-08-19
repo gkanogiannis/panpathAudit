@@ -1,0 +1,69 @@
+---
+title: "Auditing GFA traversals"
+author: "Anestis Gkanogiannis"
+package: panpathAudit
+output: BiocStyle::html_document
+vignette: >
+  %\VignetteIndexEntry{Auditing GFA traversals}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, message=FALSE}
+library(panpathAudit)
+```
+
+# Basic audit
+
+```{r basic}
+fasta <- system.file("extdata", "example.fa", package = "panpathAudit")
+gfa <- system.file("extdata", "example.gfa", package = "panpathAudit")
+result <- auditGFA(fasta, gfa)
+auditOutcomes(result)[, c("identifier", "status", "record_type")]
+```
+
+The audit checks reconstructed sequence, not graph topology. Range columns
+explicitly marked as zero-based retain GFA conventions. Other displayed
+positions are one-based.
+
+# Walks and mappings
+
+`W` identifiers use `sample#haplotype#sequence`. FASTA headers can be mapped
+with one row per file.
+
+```{r walks}
+walk_fasta <- system.file("extdata", "walk.fa", package = "panpathAudit")
+walk_gfa <- system.file("extdata", "walk.gfa", package = "panpathAudit")
+walk_result <- auditGFA(walk_fasta, walk_gfa)
+auditOutcomes(walk_result)[, c(
+    "identifier", "status", "source_start_0based",
+    "source_end_0based_exclusive", "addressed_source_bases"
+)]
+```
+
+For an unmapped header such as `chr1`, use:
+
+```{r mapping, eval=FALSE}
+mapping <- data.frame(
+    mode = "pansn", sample = "sample", haplotype = "1", prefix = ""
+)
+auditGFA("assembly.fa", "graph.gfa", mapping = mapping)
+```
+
+# Comprehensive statistics
+
+```{r comprehensive}
+detailed <- auditGFA(fasta, gfa, statistics = "comprehensive")
+auditStatistics(detailed)$global
+auditTelemetry(detailed)
+```
+
+Alignment work is bounded by `alignmentMaxCells` and `memoryMiB`. An unavailable
+alignment remains a completed outcome and records its reason in
+`alignment_status`.
+
+# Session information
+
+```{r session-info}
+sessionInfo()
+```
