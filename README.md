@@ -15,3 +15,16 @@ auditOutcomes(result)
 ```
 
 Use `statistics = "comprehensive"` for base-level alignment statistics.
+
+Inputs may be plain or gzip-compressed. The parser supports GFA `P` paths and
+`W` walks with blunt overlaps. Range fields retain GFA's zero-based, half-open
+coordinates; displayed base positions are one-based.
+
+Failures carry a structured `diagnostics` `DataFrame`:
+
+```r
+tryCatch(
+    auditGFA("missing.fa", "graph.gfa"),
+    panpathAudit_error = function(error) error$diagnostics
+)
+```

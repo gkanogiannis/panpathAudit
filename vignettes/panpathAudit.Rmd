@@ -13,6 +13,13 @@ vignette: >
 library(panpathAudit)
 ```
 
+# Input scope
+
+Inputs may be plain or gzip-compressed FASTA and GFA files. The package reads
+GFA `P` paths and `W` walks. Path overlaps must be blunt (`*` or `0M`), and
+sequence symbols must use the IUPAC nucleotide alphabet. Graph topology is not
+validated.
+
 # Basic audit
 
 ```{r basic}
@@ -26,10 +33,24 @@ The audit checks reconstructed sequence, not graph topology. Range columns
 explicitly marked as zero-based retain GFA conventions. Other displayed
 positions are one-based.
 
+The result separates traversal outcomes from summary and provenance data.
+
+```{r result-structure}
+names(auditOutcomes(result))
+auditSummary(result)
+auditProvenance(result)[c("gfa_version", "path_records", "walk_records")]
+```
+
 # Walks and mappings
 
 `W` identifiers use `sample#haplotype#sequence`. FASTA headers can be mapped
 with one row per file.
+
+| Mode | Required fields | Identifier |
+|:-----|:----------------|:-----------|
+| `exact` | none | FASTA record name |
+| `pansn` | `sample`, numeric `haplotype` | `sample#haplotype#name` |
+| `prefix` | `prefix` | `prefix` plus record name |
 
 ```{r walks}
 walk_fasta <- system.file("extdata", "walk.fa", package = "panpathAudit")
@@ -61,6 +82,18 @@ auditTelemetry(detailed)
 Alignment work is bounded by `alignmentMaxCells` and `memoryMiB`. An unavailable
 alignment remains a completed outcome and records its reason in
 `alignment_status`.
+
+# Diagnostics
+
+Argument, input, and operational errors inherit from `panpathAudit_error` and
+carry a `diagnostics` `DataFrame`.
+
+```{r diagnostics, eval=FALSE}
+tryCatch(
+    auditGFA("missing.fa", "graph.gfa"),
+    panpathAudit_error = function(error) error$diagnostics
+)
+```
 
 # Session information
 

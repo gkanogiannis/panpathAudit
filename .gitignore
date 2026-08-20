@@ -3,6 +3,7 @@
 HANDOFF.md
 /*.tar.gz
 /*.Rcheck/
+/*.BiocCheck/
 /.Rd2pdf*/
 /*-manual.pdf
 src/*.o

@@ -3,7 +3,7 @@ PKG_CPPFLAGS = -I. -Ivendor/blake3 -Ivendor/sha256 \
     -DBLAKE3_NO_SSE2 -DBLAKE3_NO_SSE41 -DBLAKE3_NO_AVX2 \
     -DBLAKE3_NO_AVX512 -DBLAKE3_USE_NEON=0
 PKG_LIBS = -lz
-OBJECTS = RcppExports.o audit.o digests.o engine.o graph.o input.o memory.o \
+OBJECTS = interface.o audit.o digests.o engine.o graph.o input.o memory.o \
     sequence.o spool.o statistics.o vendor/blake3/blake3.o \
     vendor/blake3/blake3_dispatch.o vendor/blake3/blake3_portable.o \
     vendor/sha256/sha-256.o

@@ -15,9 +15,7 @@ auditGFA(
 \arguments{
 \item{fasta}{Character vector of FASTA paths.}
 \item{gfa}{One GFA path.}
-\item{mapping}{Optional data frame with one row per FASTA and columns
-\code{mode}, \code{sample}, \code{haplotype}, and \code{prefix}. Modes are
-\code{exact}, \code{pansn}, and \code{prefix}.}
+\item{mapping}{Optional data frame with one row per FASTA. See Details.}
 \item{statistics}{Either \code{"basic"} or \code{"comprehensive"}.}
 \item{threads}{Positive worker count.}
 \item{memoryMiB}{Positive tracked-memory limit in MiB.}
@@ -29,11 +27,19 @@ Compares source sequences with named GFA \code{P} paths and coordinate-aware
 \code{W} walks. Graph topology is not validated.
 }
 \details{
-Input and operational failures raise conditions inheriting from
-\code{panpathAudit_error}. Their \code{diagnostics} member is a
-\code{DataFrame}. Source range columns ending in \code{0based} or
-\code{0based_exclusive} retain GFA coordinates. Diagnostic positions are
-one-based.
+Gzip input is detected from file content. GFA \code{P} records must use blunt
+overlaps (\code{*} or \code{0M}). \code{W} identifiers are formed as
+\code{sample#haplotype#sequence}; their ranges are zero-based and half-open.
+
+Mapping modes are \code{exact}, \code{pansn}, and \code{prefix}. PanSN rows
+require \code{sample} and numeric \code{haplotype}; prefix rows require
+\code{prefix}.
+
+Argument, input, and operational failures raise conditions with classes
+\code{panpathAudit_argument_error}, \code{panpathAudit_input_error}, and
+\code{panpathAudit_operational_error}. Each inherits from
+\code{panpathAudit_error} and carries a \code{diagnostics} \code{DataFrame}.
+Diagnostic positions are one-based.
 }
 \examples{
 fasta <- system.file("extdata", "example.fa", package = "panpathAudit")

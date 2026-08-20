@@ -150,14 +150,26 @@
 #' Compares FASTA records with named GFA paths and coordinate-aware walks.
 #' Graph topology is not validated.
 #'
+#' Gzip input is detected from file content. GFA `P` records must use blunt
+#' overlaps (`*` or `0M`). `W` identifiers are formed as
+#' `sample#haplotype#sequence` and use zero-based, half-open ranges.
+#'
 #' @param fasta Character vector of FASTA paths.
 #' @param gfa One GFA path.
-#' @param mapping Optional mapping data frame with one row per FASTA.
+#' @param mapping Optional data frame with one row per FASTA. See Details.
 #' @param statistics Either `"basic"` or `"comprehensive"`.
 #' @param threads Positive worker count.
 #' @param memoryMiB Positive tracked-memory limit in MiB.
 #' @param alignmentMaxCells Positive comprehensive-alignment limit.
 #' @return A `PanPathAuditResult`.
+#' @details
+#' Mapping modes are `exact`, `pansn`, and `prefix`. PanSN rows require
+#' `sample` and numeric `haplotype`; prefix rows require `prefix`.
+#'
+#' Input failures raise `panpathAudit_input_error`; argument failures raise
+#' `panpathAudit_argument_error`; operational failures raise
+#' `panpathAudit_operational_error`. Each inherits from `panpathAudit_error`
+#' and carries a `diagnostics` `DataFrame`.
 #' @export
 auditGFA <- function(
     fasta,

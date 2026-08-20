@@ -102,6 +102,28 @@ test_that("gzip is detected by content", {
     expect_equal(auditProvenance(result)$gfa_compression, "gzip")
 })
 
+test_that("paths with spaces and Unicode are supported", {
+    directory <- file.path(case_directory(), "input space \u03b1")
+    dir.create(directory)
+    fasta <- file.path(directory, "source \u03b2.fa")
+    gfa <- file.path(directory, "graph \u03b3.gfa")
+    writeLines(">sample\nACGT", fasta, useBytes = TRUE)
+    writeLines("S\t1\tACGT\nP\tsample\t1+\t*", gfa, useBytes = TRUE)
+    expect_equal(outcome_frame(auditGFA(fasta, gfa))$status, "IDENTICAL")
+})
+
+test_that("unavailable input files produce structured diagnostics", {
+    case <- audit_case(">sample\nAC", "S\t1\tAC\nP\tsample\t1+\t*")
+    missing_fasta <- file.path(case$directory, "missing.fa")
+    missing_gfa <- file.path(case$directory, "missing.gfa")
+    fasta_error <- captured_error(auditGFA(missing_fasta, case$gfa))
+    gfa_error <- captured_error(auditGFA(case$fasta, missing_gfa))
+    expect_s3_class(fasta_error, "panpathAudit_input_error")
+    expect_s3_class(gfa_error, "panpathAudit_input_error")
+    expect_true("FASTA_READ" %in% fasta_error$diagnostics$code)
+    expect_true("GFA_READ" %in% gfa_error$diagnostics$code)
+})
+
 test_that("source and graph preflight errors are combined", {
     case <- audit_case(">dup\nAC\n>dup\nGT", "S\t1\tAX\nP\tdup\tbroken\t*\nS\t2\tAZ")
     error <- captured_error(auditGFA(case$fasta, case$gfa))

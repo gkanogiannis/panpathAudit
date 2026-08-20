@@ -1,3 +1,4 @@
+// Hand-written R interface; do not regenerate with Rcpp::compileAttributes().
 #include <Rcpp.h>
 #include <R_ext/Rdynload.h>
 
