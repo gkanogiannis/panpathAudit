@@ -10,7 +10,10 @@
 ^\.vscode$
 ^\.claude$
 ^data$
+^[.]Rd2pdf
+^.*[.]Rcheck$
+^panpathAudit-manual[.]pdf$
 ^README\.html$
 ^README\.Rmd$
 ^.*\.tar\.gz$
-\\.*\\.DS_Store$
+^.*[.]DS_Store$

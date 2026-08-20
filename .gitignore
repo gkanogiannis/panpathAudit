@@ -2,6 +2,9 @@
 /data
 HANDOFF.md
 /*.tar.gz
+/*.Rcheck/
+/.Rd2pdf*/
+/*-manual.pdf
 src/*.o
 src/*.so
 src/*.dll
