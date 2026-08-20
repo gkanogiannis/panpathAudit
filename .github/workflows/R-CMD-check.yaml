@@ -48,7 +48,7 @@ jobs:
       - uses: r-lib/actions/check-r-package@v2
         with:
           args: ${{ matrix.check-args }}
-          error-on: 'warning'
+          error-on: '"warning"'
       - name: BiocCheck
         if: runner.os == 'Linux'
         shell: bash
