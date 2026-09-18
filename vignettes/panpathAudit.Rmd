@@ -1,7 +1,7 @@
 ---
 title: "Auditing GFA traversals"
 author: "Anestis Gkanogiannis"
-date: "20 August 2026"
+date: "`r format(Sys.Date(), '%d %B %Y')`"
 package: panpathAudit
 output:
     BiocStyle::html_document:
@@ -19,32 +19,65 @@ knitr::opts_chunk$set(
     warning = FALSE,
     message = FALSE,
     collapse = TRUE,
-    comment = "#>"
+    comment = "#>",
+    # BiocStyle's crop hook needs magick; FALSE does not disable it, only NULL
+    crop = NULL
 )
+
+cap1 <- paste(
+    "Anatomy of a reverse-strand divergence. The highlighted column and",
+    "both position rulers are taken from the audit result above; the",
+    "segment blocks are the graph defined in this section.")
+cap2 <- paste(
+    "Walk coverage and the two coordinate conventions. Edge numbers are",
+    "zero-based and half-open; base numbers are one-based. Ranges and",
+    "totals are taken from the outcome row above.")
+cap3 <- paste(
+    "How the comprehensive base buckets partition each side. Both bars",
+    "are drawn from the values printed above and sum to the reported",
+    "source and graph base totals.")
 ```
 
 # Introduction
 
-`panpathAudit` tests whether source FASTA sequences are preserved by named
-traversals in GFA files. It reports exact recovery, divergence coordinates,
-digests, and optional base-level statistics. Results and diagnostics use
-Bioconductor `DataFrame` containers for integration with R workflows.
-The package brings sequence-preservation auditing into reproducible R and
-Bioconductor analyses while retaining the bounded native implementation used
-by the command-line reference tool.
+A pangenome graph usually claims to embed the assemblies it was built from: each
+named `P` path or `W` walk should spell out, base for base, the contig it is
+labelled with. That claim is easy to break and easy to miss. Graph construction
+and normalization rewrite segments, chunked builds are stitched back together,
+coordinates are lifted between references, and files are round-tripped through
+several tools before anyone looks at them. The graph stays well formed
+throughout, so structural validators stay quiet.
+
+`panpathAudit` answers a narrower question: **is the source sequence still
+recoverable from the traversal, and if not, exactly where does it stop
+matching?** It reconstructs the sequence spelled by every named traversal,
+compares it against the source FASTA, and reports the first divergent base with
+its source, traversal and segment coordinates, along with digests and optional
+base-level alignment statistics.
 
 Tools such as `gfatools` and `odgi` provide broader graph manipulation and
 analysis. `panpathAudit` instead provides a focused, reproducible audit of
-sequence preservation. It does not validate graph topology. Source code and
-issues are available from the [package repository][repository].
+sequence preservation. It does not validate graph topology: links, overlaps
+beyond blunt joins, and connectivity are outside its scope. Results and
+diagnostics use Bioconductor `DataFrame` containers for integration with R
+workflows, while the bounded native implementation used by the command-line
+reference tool is retained. Source code and issues are available from the
+[package repository][repository].
 
 # Installation
 
 ```{r installation, eval=FALSE}
 if (!requireNamespace("BiocManager", quietly = TRUE))
     install.packages("BiocManager")
+
 BiocManager::install("panpathAudit")
 ```
+
+You can install the development version of `panpathAudit`:
+```r
+devtools::install_github("gkanogiannis/panpathAudit")
+```
+Building the package requires a C++20 compiler and zlib.
 
 ```{r setup}
 library(panpathAudit)
@@ -52,10 +85,10 @@ library(panpathAudit)
 
 # Input scope
 
-Inputs may be plain or gzip-compressed FASTA and GFA files. The package reads
-GFA `P` paths and `W` walks. Path overlaps must be blunt (`*` or `0M`), and
-sequence symbols must use the IUPAC nucleotide alphabet. Graph topology is not
-validated.
+Inputs may be plain or gzip-compressed FASTA and GFA files; compression is
+detected from file content, not from the file name. The package reads GFA `P`
+paths and `W` walks. Path overlaps must be blunt (`*` or `0M`), and sequence
+symbols must use the IUPAC nucleotide alphabet. Graph topology is not validated.
 
 # Basic audit
 
@@ -63,25 +96,277 @@ validated.
 fasta <- system.file("extdata", "example.fa", package = "panpathAudit")
 gfa <- system.file("extdata", "example.gfa", package = "panpathAudit")
 result <- auditGFA(fasta, gfa)
+result
+```
+
+Printing the object gives the headline counts. The per-traversal detail lives in
+the outcomes table.
+
+```{r basic-outcomes}
 auditOutcomes(result)[, c("identifier", "status", "record_type")]
 ```
 
-The audit checks reconstructed sequence, not graph topology. Range columns
-explicitly marked as zero-based retain GFA conventions. Other displayed
-positions are one-based.
-
-The result separates traversal outcomes from summary and provenance data.
+The result separates traversal outcomes from summary, provenance and telemetry
+data. These accessors return `SimpleList` objects, so wrap them in `as.list()`
+when you want their contents printed.
 
 ```{r result-structure}
-names(auditOutcomes(result))
-auditSummary(result)
-auditProvenance(result)[c("gfa_version", "path_records", "walk_records")]
+as.list(auditSummary(result))
+provenance <- auditProvenance(result)
+as.list(provenance[c("gfa_version", "path_records", "walk_records")])
+```
+
+Provenance also records the resolved input paths, the mapping and resource
+options in force, and a `topology_validated` flag that is always `FALSE` — a
+reminder of what the audit does not cover.
+
+# Audit statuses
+
+Every source record and every named traversal is accounted for by exactly one of
+four statuses. All four are completed outcomes, not errors.
+
+| Status | Meaning |
+|:-------|:--------|
+| `IDENTICAL` | The traversal spells the source sequence exactly. |
+| `DIVERGENT` | Both sides exist but differ; see divergence columns. |
+| `MISSING_PATH` | A source record has no traversal of that name. |
+| `MISSING_SOURCE` | A traversal has no source record of that name. |
+
+A single audit can report all four at once. The following graph embeds one
+contig faithfully, one with a substitution, carries a path with no source, and
+leaves one source record unrepresented.
+
+```{r mixed-setup}
+workdir <- tempfile("panpathAudit-demo-")
+dir.create(workdir)
+
+mixed_fasta <- file.path(workdir, "mixed.fa")
+mixed_gfa <- file.path(workdir, "mixed.gfa")
+
+writeLines(c(
+    ">same", "ACGT",
+    ">changed", "AAAA",
+    ">absent", "NN"
+), mixed_fasta)
+
+writeLines(c(
+    "H\tVN:Z:1.1",
+    "S\t1\tACGT",
+    "S\t2\tAATA",
+    "S\t3\tGG",
+    "P\tsame\t1+\t*",
+    "P\tchanged\t2+\t*",
+    "P\textra\t3+\t*"
+), mixed_gfa)
+```
+
+```{r mixed-audit}
+mixed <- auditGFA(mixed_fasta, mixed_gfa)
+auditOutcomes(mixed)[, c(
+    "identifier", "status", "record_type", "source_length", "graph_length"
+)]
+auditSummary(mixed)$counts
+```
+
+`source_length` is `NA` for `MISSING_SOURCE` and `graph_length` is `NA` for
+`MISSING_PATH`; columns that do not apply to a row are always `NA`. See
+`?PanPathAuditResult` for the full column catalogue.
+
+# Reading a divergence
+
+The point of the audit is the `DIVERGENT` row. Consider a source contig `ACGA`
+against a two-segment path that spells `AC` + `GT`:
+
+```{r divergent-setup}
+divergent_fasta <- file.path(workdir, "divergent.fa")
+divergent_gfa <- file.path(workdir, "divergent.gfa")
+
+writeLines(c(">sample", "ACGA"), divergent_fasta)
+writeLines(c(
+    "H\tVN:Z:1.1",
+    "S\t1\tAC",
+    "S\t2\tGT",
+    "P\tsample\t1+,2+\t*"
+), divergent_gfa)
+```
+
+```{r divergent-audit}
+divergent <- auditGFA(divergent_fasta, divergent_gfa)
+auditOutcomes(divergent)[, c(
+    "status", "divergence_kind", "source_position_1based", "segment",
+    "orientation", "traversal_position_1based", "segment_position_1based"
+)]
+```
+
+The source reads `ACGA` and the path spells `ACGT`, so the first three bases
+agree and the fourth does not. The report locates that base three ways, all of
+them **one-based**, as the `_1based` suffixes indicate: it is base 4 of the
+source contig, it falls in segment `2` (`GT`), and within that segment it is
+base 2 — the `T` the graph supplies where the source has `A`.
+`traversal_position_1based` locates that same divergence along the segment *as
+the path reads it*. This step is `+`, so the path reads segment `2` forwards and
+the two coordinates coincide. On a reverse step they do not, which is why both
+are reported; *Reverse traversals* below shows that case.
+
+`divergence_kind` distinguishes three failure shapes:
+
+- `BASE` — both sides supply a base at that position and they differ.
+- `END` — one side ran out first.
+- `RANGE_LENGTH` — a walk reconstructed to a different length than its
+    declared range.
+
+When the graph is exhausted before the source is, no segment can be named:
+
+```{r divergent-end}
+truncated_fasta <- file.path(workdir, "truncated.fa")
+truncated_gfa <- file.path(workdir, "truncated.gfa")
+
+writeLines(c(">sample", "ACGT"), truncated_fasta)
+writeLines(c("H\tVN:Z:1.1", "S\t1\tACG", "P\tsample\t1+\t*"), truncated_gfa)
+
+auditOutcomes(auditGFA(truncated_fasta, truncated_gfa))[, c(
+    "divergence_kind", "source_position_1based", "source_length",
+    "graph_length", "segment"
+)]
+```
+
+## Reverse traversals
+
+When a path traverses a segment on the reverse strand, the two position columns
+come apart, which is why both are reported. Here the divergence is at source
+base 5, inside the reverse-complemented segment `2` (`TTGA`, four bases long):
+
+```{r divergent-reverse}
+reverse_fasta <- file.path(workdir, "reverse.fa")
+reverse_gfa <- file.path(workdir, "reverse.gfa")
+
+writeLines(c(">sampleB#1#chr1", "ACGTGCAACC"), reverse_fasta)
+writeLines(c(
+    "H\tVN:Z:1.0",
+    "S\t1\tACGT", "S\t2\tTTGA", "S\t3\tCC",
+    "P\tsampleB#1#chr1\t1+,2-,3+\t*"
+), reverse_gfa)
+
+reverse <- auditGFA(reverse_fasta, reverse_gfa)
+auditOutcomes(reverse)[, c(
+    "source_position_1based", "segment", "orientation",
+    "traversal_position_1based", "segment_position_1based"
+)]
+```
+
+`traversal_position_1based` is 1 — the divergence is at the first base the path
+reads out of that segment — while `segment_position_1based` is 4, because
+reading `TTGA` backwards starts at its last base. Use the traversal coordinate
+to reason about the path, and the segment coordinate to find the base in the `S`
+record.
+
+```{r fig-div, echo=FALSE, fig.dim=c(7.5, 3.8), fig.cap=cap1}
+plot_divergence <- function(row) {
+    src <- "ACGTGCAACC"
+    gph <- "ACGTTCAACC"
+    segs <- list(
+        list(name = "1", orient = "+", from = 1, to = 4, seq = "ACGT"),
+        list(name = "2", orient = "-", from = 5, to = 8, seq = "TTGA"),
+        list(name = "3", orient = "+", from = 9, to = 10, seq = "CC"))
+    pos <- row$source_position_1based
+    n <- nchar(src)
+    pal <- palette.colors(8, "Okabe-Ito")
+    hit <- pal[7]; blue <- pal[3]; grey <- "#E9E9E9"; ink <- "#222222"
+
+    old <- par(mar = c(0.2, 0.2, 0.2, 0.2))
+    on.exit(par(old))
+    plot.new()
+    plot.window(xlim = c(-2.9, n + 0.3), ylim = c(0, 7.1))
+
+    cell <- function(i, y0, y1, ch, fill, col) {
+        rect(i - 1, y0, i, y1, col = fill, border = "white", lwd = 2)
+        text(i - 0.5, (y0 + y1) / 2, ch, col = col, font = 2, cex = 1.05)
+    }
+    lab <- function(y, txt, cex = 0.9, col = ink)
+        text(-0.25, y, txt, adj = c(1, 0.5), cex = cex, col = col)
+
+    for (i in seq_len(n)) {
+        on <- i == pos
+        cell(i, 6.0, 6.9, substr(src, i, i), if (on) hit else grey,
+            if (on) "white" else ink)
+        cell(i, 4.9, 5.8, substr(gph, i, i), if (on) hit else grey,
+            if (on) "white" else ink)
+    }
+    lab(6.45, "source")
+    lab(5.35, "graph")
+
+    for (sg in segs) {
+        rev <- sg$orient == "-"
+        rect(sg$from - 1, 3.9, sg$to, 4.6,
+            col = if (rev) blue else "#D9D9D9", border = "white", lwd = 2)
+        text((sg$from - 1 + sg$to) / 2, 4.25,
+            sprintf("%s (%s)  %s", sg$name, sg$orient, sg$seq),
+            col = if (rev) "white" else ink, cex = 0.85, font = 2)
+    }
+    lab(4.25, "segments")
+
+    rs <- segs[[2]]
+    k <- rs$to - rs$from + 1
+    for (j in seq_len(k)) {
+        x <- rs$from - 1 + j - 0.5
+        on <- (rs$from + j - 1) == pos
+        text(x, 3.25, j, cex = 0.9, col = if (on) hit else ink,
+            font = if (on) 2 else 1)
+        text(x, 2.65, k - j + 1, cex = 0.9, col = if (on) hit else ink,
+            font = if (on) 2 else 1)
+    }
+    lab(3.25, "traversal position", 0.8)
+    lab(2.65, "segment position", 0.8)
+    arrows(rs$to - 0.1, 2.1, rs$from - 0.9, 2.1, length = 0.08,
+        col = blue, lwd = 2)
+    text((rs$from - 1 + rs$to) / 2, 1.75,
+        sprintf("%s reverse-complemented = TCAA", rs$seq),
+        cex = 0.8, col = blue)
+
+    segments(pos - 0.5, 4.9, pos - 0.5, 4.62, col = hit, lwd = 2)
+    text(n / 2, 0.85, sprintf(
+        "divergence: source %d  |  segment %s  |  orientation %s",
+        pos, row$segment, row$orientation), cex = 0.88, col = ink)
+    text(n / 2, 0.3, sprintf(
+        "traversal position %d  =  segment position %d",
+        row$traversal_position_1based, row$segment_position_1based),
+        cex = 0.88, col = hit, font = 2)
+}
+
+plot_divergence(as.data.frame(auditOutcomes(reverse)))
+```
+
+## Digests
+
+Every row also carries `source_sha256`, `graph_sha256` and their BLAKE3
+counterparts (plus `addressed_*` variants for walks). They let you confirm an
+`IDENTICAL` verdict independently, or compare an audit against another tool's
+output, without re-reading either file.
+
+```{r digests}
+as.data.frame(auditOutcomes(divergent)[, c("source_sha256", "graph_sha256")])
 ```
 
 # Walks and mappings
 
-`W` identifiers use `sample#haplotype#sequence`. FASTA headers can be mapped
-with one row per file.
+`W` records identify a sequence as `sample#haplotype#sequence` and address a
+half-open, zero-based range of it. Assembly FASTA headers are rarely written in
+that form, so without help the two sides do not meet: the same file audited
+against a walk graph reports the source as `MISSING_PATH` and the walk as
+`MISSING_SOURCE`.
+
+```{r mapping-unmapped}
+walk_gfa <- system.file("extdata", "walk.gfa", package = "panpathAudit")
+
+plain_fasta <- file.path(workdir, "chr1.fa")
+writeLines(c(">chr1", "ACGTGT"), plain_fasta)
+
+auditOutcomes(auditGFA(plain_fasta, walk_gfa))[, c(
+    "identifier", "status", "record_type"
+)]
+```
+
+A mapping supplies the missing naming convention, with one row per FASTA file.
 
 | Mode | Required fields | Identifier |
 |:-----|:----------------|:-----------|
@@ -89,44 +374,209 @@ with one row per file.
 | `pansn` | `sample`, numeric `haplotype` | `sample#haplotype#name` |
 | `prefix` | `prefix` | `prefix` plus record name |
 
-```{r walks}
-walk_fasta <- system.file("extdata", "walk.fa", package = "panpathAudit")
-walk_gfa <- system.file("extdata", "walk.gfa", package = "panpathAudit")
-walk_result <- auditGFA(walk_fasta, walk_gfa)
-auditOutcomes(walk_result)[, c(
-    "identifier", "status", "source_start_0based",
-    "source_end_0based_exclusive", "addressed_source_bases"
-)]
-```
-
-For an unmapped header such as `chr1`, use:
-
 ```{r mapping}
-mapped_fasta <- tempfile(fileext = ".fa")
-writeLines(c(">chr1", "ACGTGT"), mapped_fasta)
 mapping <- data.frame(
     mode = "pansn", sample = "sample", haplotype = "1", prefix = ""
 )
-mapped_result <- auditGFA(mapped_fasta, walk_gfa, mapping = mapping)
-auditOutcomes(mapped_result)[, c("identifier", "status", "record_type")]
+mapped <- auditGFA(plain_fasta, walk_gfa, mapping = mapping)
+auditOutcomes(mapped)[, c("identifier", "status", "record_type")]
+```
+
+Because a walk addresses only part of its source, a walk outcome reports both
+the range it covers and how much of the contig that range actually reaches.
+
+```{r walks}
+walk_fasta <- system.file("extdata", "walk.fa", package = "panpathAudit")
+walk_result <- auditGFA(walk_fasta, walk_gfa)
+auditOutcomes(walk_result)[, c(
+    "identifier", "status", "source_start_0based",
+    "source_end_0based_exclusive", "addressed_source_bases", "source_length"
+)]
+```
+
+Mind the two conventions in that one row. `source_start_0based` and
+`source_end_0based_exclusive` retain GFA's **zero-based, half-open** ranges, so
+`0` and `6` span the whole six-base contig. The graph reaches only four of those
+bases: this example holds two walks, covering `[0, 2)` and `[4, 6)`, leaving the
+two bases in between unaddressed. Every other displayed position, including all
+the divergence coordinates above, is one-based.
+
+```{r fig-cov, echo=FALSE, fig.dim=c(6.8, 3.6), fig.cap=cap2}
+plot_coverage <- function(
+    row, seq = "ACGTGT", walks = list(c(0, 2), c(4, 6))) {
+    n <- nchar(seq)
+    pal <- palette.colors(8, "Okabe-Ito")
+    green <- pal[4]; grey <- "#E9E9E9"; ink <- "#222222"; mute <- "#777777"
+    covered <- rep(FALSE, n)
+    for (w in walks) covered[(w[1] + 1):w[2]] <- TRUE
+
+    old <- par(mar = c(0.2, 0.2, 0.2, 0.2))
+    on.exit(par(old))
+    plot.new()
+    plot.window(xlim = c(-3.0, n + 0.4), ylim = c(0, 6.2))
+
+    for (i in seq_len(n)) {
+        on <- covered[i]
+        rect(i - 1, 3.5, i, 4.5, col = if (on) green else grey,
+            border = "white", lwd = 2)
+        text(i - 0.5, 4.0, substr(seq, i, i), font = 2, cex = 1.05,
+            col = if (on) "white" else mute)
+    }
+    text(-0.3, 4.0, "contig", adj = c(1, 0.5), cex = 0.85, col = ink)
+
+    for (e in 0:n) {
+        segments(e, 4.55, e, 4.85, col = mute, lwd = 1)
+        text(e, 5.15, e, cex = 0.85, col = ink)
+    }
+    text(-0.3, 5.15, "0-based edges", adj = c(1, 0.5), cex = 0.85, col = ink)
+    text(n / 2, 5.75, "zero-based, half-open: boundaries between bases",
+        cex = 0.82, col = mute)
+
+    for (i in seq_len(n)) text(i - 0.5, 3.1, i, cex = 0.85, col = ink)
+    text(-0.3, 3.1, "1-based bases", adj = c(1, 0.5), cex = 0.85, col = ink)
+
+    for (w in walks) {
+        segments(w[1] + 0.06, 2.45, w[2] - 0.06, 2.45, col = green, lwd = 3)
+        text(mean(w), 2.05, sprintf("W [%d, %d)", w[1], w[2]),
+            cex = 0.8, col = green)
+    }
+    gap <- which(!covered)
+    segments(min(gap) - 0.94, 2.45, max(gap) - 0.06, 2.45,
+            col = mute, lwd = 2, lty = 3)
+    text(mean(gap) - 0.5, 2.05, sprintf("not_embedded (%d)", length(gap)),
+        cex = 0.8, col = mute)
+    text(-0.3, 2.45, "walk ranges", adj = c(1, 0.5), cex = 0.85, col = mute)
+
+    segments(row$source_start_0based + 0.06, 1.3,
+            row$source_end_0based_exclusive - 0.06, 1.3,
+            col = ink, lwd = 1.5)
+    text(n / 2, 0.9, sprintf("outcome row spans [%d, %d)",
+        row$source_start_0based, row$source_end_0based_exclusive),
+        cex = 0.8, col = ink)
+    text(n / 2, 0.3, sprintf(
+        "addressed_source_bases = %d   of   source_length = %d",
+        row$addressed_source_bases, row$source_length),
+        cex = 0.88, col = ink, font = 2)
+}
+
+plot_coverage(as.data.frame(auditOutcomes(walk_result)))
 ```
 
 # Comprehensive statistics
 
+`statistics = "comprehensive"` adds a base-level alignment of every divergent
+pair and aggregates the result globally, by source and by record type.
+
 ```{r comprehensive}
-detailed <- auditGFA(fasta, gfa, statistics = "comprehensive")
-auditStatistics(detailed)$global
-auditTelemetry(detailed)
+detailed <- auditGFA(mixed_fasta, mixed_gfa, statistics = "comprehensive")
+names(auditStatistics(detailed))
+
+global <- auditStatistics(detailed)$global
+global$bases
 ```
 
-Alignment work is bounded by `alignmentMaxCells` and `memoryMiB`. An unavailable
-alignment remains a completed outcome and records its reason in
-`alignment_status`.
+The buckets account for every base the audit saw, on both sides. `matched` and
+`substituted` count aligned *columns*, each pairing one source base with one
+graph base; the remaining buckets count bases on one side only.
+
+- `matched`, `substituted` — aligned columns that agree or disagree.
+- `source_only`, `graph_only` — insertions and deletions in the alignment.
+- `not_embedded` — source bases no walk range addresses.
+- `missing_path`, `missing_source` — bases in records with no counterpart.
+- `unaligned_divergent_*` — divergent bases left unaligned by a resource limit.
+
+Reading the example: of the 10 source bases, 7 align and match, 1 aligns and is
+substituted, and 2 sit in `absent`, which has no path. Of the 10 graph bases,
+the same 8 align and 2 sit in `extra`, which has no source. Per-row alignment
+detail sits alongside in the outcomes table.
+
+```{r fig-part, echo=FALSE, fig.dim=c(6.8, 2.9), fig.cap=cap3}
+plot_partition <- function(bases, global) {
+    pal <- palette.colors(8, "Okabe-Ito")
+    spec <- list(
+        matched        = list(col = pal[4], lab = "matched"),
+        substituted    = list(col = pal[7], lab = "substituted"),
+        source_only    = list(col = pal[2], lab = "source_only"),
+        graph_only     = list(col = pal[2], lab = "graph_only"),
+        not_embedded   = list(col = "#BBBBBB", lab = "not_embedded"),
+        missing_path   = list(col = pal[3], lab = "missing_path"),
+        missing_source = list(col = pal[8], lab = "missing_source"))
+    sides <- list(
+        source = c("matched", "substituted", "source_only",
+                "not_embedded", "missing_path"),
+        graph  = c("matched", "substituted", "graph_only", "missing_source"))
+    totals <- c(source = global$source_bases, graph = global$graph_bases)
+    used <- character()
+
+    old <- par(mar = c(0.2, 0.2, 0.2, 0.2))
+    on.exit(par(old))
+    plot.new()
+    xmax <- max(totals)
+    plot.window(xlim = c(-2.7, xmax + 0.3), ylim = c(-1.7, 3.0))
+    ys <- c(source = 2.05, graph = 0.85)
+
+    for (nm in names(sides)) {
+        x <- 0
+        y <- ys[[nm]]
+        for (k in sides[[nm]]) {
+            v <- bases[[k]]
+            if (is.null(v) || v <= 0) next
+            used <- c(used, k)
+            rect(x, y - 0.38, x + v, y + 0.38, col = spec[[k]]$col,
+                border = "white", lwd = 2)
+            text(x + v / 2, y, v, col = "white", font = 2, cex = 0.95)
+            x <- x + v
+        }
+        text(-0.3, y, sprintf("%s bases", nm), adj = c(1, 0.5), cex = 0.9)
+        text(xmax + 0.25, y, totals[[nm]], adj = c(0, 0.5), cex = 0.85,
+            col = "#777777")
+    }
+
+    used <- unique(used)
+    per <- xmax / max(length(used), 1)
+    for (i in seq_along(used)) {
+        k <- used[[i]]
+        x0 <- (i - 1) * per
+        rect(x0, -0.75, x0 + 0.42, -0.42, col = spec[[k]]$col,
+            border = "white")
+        text(x0 + 0.58, -0.58, spec[[k]]$lab, adj = c(0, 0.5), cex = 0.72)
+    }
+    text(xmax / 2, -1.35,
+        "matched and substituted are aligned columns, on both sides",
+        cex = 0.75, col = "#777777")
+}
+
+plot_partition(global$bases, global)
+```
+
+```{r comprehensive-rows}
+auditOutcomes(detailed)[, c(
+    "identifier", "status", "matched", "substituted", "edit_distance",
+    "alignment_status"
+)]
+```
+
+`alignment_status` records why a row does or does not carry alignment numbers:
+`not_required` for an identical pair, `complete` for a finished alignment,
+`not_applicable` where one side is absent, and `limit_exceeded` or
+`memory_limit_exceeded` where a bound stopped the work. Alignment is bounded by
+`alignmentMaxCells` and `memoryMiB`; an unavailable alignment remains a
+completed outcome and is reported in the `unaligned_divergent_*` buckets rather
+than failing the audit. `auditTelemetry()` reports what the run actually used.
+
+```{r telemetry}
+as.list(auditTelemetry(detailed))
+```
+
+Set `threads` to audit records in parallel; results are deterministic and do not
+depend on the thread count.
 
 # Diagnostics
 
-Argument, input, and operational errors inherit from `panpathAudit_error` and
-carry a `diagnostics` `DataFrame`.
+Argument, input, and operational errors raise `panpathAudit_argument_error`,
+`panpathAudit_input_error`, and `panpathAudit_operational_error` respectively.
+All three inherit from `panpathAudit_error`, so one handler catches any of them,
+and each carries a `diagnostics` `DataFrame` rather than only a message.
 
 ```{r diagnostics}
 diagnostics <- tryCatch(
@@ -136,23 +586,34 @@ diagnostics <- tryCatch(
 diagnostics[, c("category", "code", "message")]
 ```
 
+Alongside `category`, `code` and `message`, the table carries `path`, `line`,
+`identifier`, `position` and `symbol` wherever the failure can be pinned to a
+location; unrelated fields are `NA`. Diagnostic positions are one-based. A
+malformed input reports every problem it found, not just the first, so one call
+is enough to see the full picture.
+
+# Citation
+
+```{r citation}
+citation("panpathAudit")
+```
+
 # References {.unnumbered}
 
+- Gkanogiannis, A. (2026). *Panpath-Audit: Sequence-Level Verification of
+    Embedded Pangenome Paths Against Source Assemblies*. Preprints.
+    DOI [10.20944/preprints202608.1872.v1][preprint].
 - [Graphical Fragment Assembly format specification][gfa-spec]
 - [Pangenome Sequence Naming specification][pansn-spec]
 - [gfatools][gfatools]
 - [odgi][odgi]
 
 [repository]: https://github.com/gkanogiannis/panpathAudit
+[preprint]: https://doi.org/10.20944/preprints202608.1872.v1
 [gfa-spec]: https://github.com/GFA-spec/GFA-spec
 [pansn-spec]: https://github.com/pangenome/PanSN-spec
 [gfatools]: https://github.com/lh3/gfatools
 [odgi]: https://github.com/pangenome/odgi
-
-The underlying audit contract is described in Gkanogiannis (2026),
-*Panpath-Audit: Sequence-Level Verification of Embedded Pangenome Paths Against
-Source Assemblies*,
-DOI 10.20944/preprints202608.1872.v1.
 
 # Session information
 
