@@ -7,6 +7,7 @@ test_that("identical and divergent paths report stable outcomes", {
     expect_equal(row$record_type, "P")
     expect_equal(row$source_sha256, row$graph_sha256)
     expect_false(auditProvenance(result)$topology_validated)
+    expect_equal(auditProvenance(result)$reference_version, "0.1.2")
 
     divergent <- audit_case(">sample\nacga", "S\t1\tAC\nS\t2\tGT\nP\tsample\t1+,2+\t*")
     row <- outcome_frame(auditGFA(divergent$fasta, divergent$gfa))

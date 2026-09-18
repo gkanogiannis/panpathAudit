@@ -1,4 +1,5 @@
 // Hand-written R interface; do not regenerate with Rcpp::compileAttributes().
+// Native port provenance: see inst/PROVENANCE.md.
 #include <Rcpp.h>
 #include <R_ext/Rdynload.h>
 

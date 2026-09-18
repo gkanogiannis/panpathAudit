@@ -4,6 +4,14 @@
 and coordinate-aware `W` walks in GFA files. It does not validate graph
 topology.
 
+Install the development version from Bioconductor with:
+
+```r
+if (!requireNamespace("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+BiocManager::install("panpathAudit")
+```
+
 ```r
 library(panpathAudit)
 

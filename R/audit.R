@@ -132,7 +132,7 @@
     )
     provenance <- c(list(
         package_version = as.character(utils::packageVersion("panpathAudit")),
-        reference_version = "0.1.1",
+        reference_version = "0.1.2",
         fasta = fasta, gfa = gfa,
         mapping = DataFrame(mapping),
         statistics = statistics, threads = threads,

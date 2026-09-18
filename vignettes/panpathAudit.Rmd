@@ -1,15 +1,52 @@
 ---
 title: "Auditing GFA traversals"
 author: "Anestis Gkanogiannis"
+date: "20 August 2026"
 package: panpathAudit
-output: BiocStyle::html_document
+output:
+    BiocStyle::html_document:
+        toc: true
+        toc_depth: 2
+        number_sections: true
 vignette: >
   %\VignetteIndexEntry{Auditing GFA traversals}
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
 ---
 
-```{r setup, message=FALSE}
+```{r global-options, include = FALSE}
+knitr::opts_chunk$set(
+    warning = FALSE,
+    message = FALSE,
+    collapse = TRUE,
+    comment = "#>"
+)
+```
+
+# Introduction
+
+`panpathAudit` tests whether source FASTA sequences are preserved by named
+traversals in GFA files. It reports exact recovery, divergence coordinates,
+digests, and optional base-level statistics. Results and diagnostics use
+Bioconductor `DataFrame` containers for integration with R workflows.
+The package brings sequence-preservation auditing into reproducible R and
+Bioconductor analyses while retaining the bounded native implementation used
+by the command-line reference tool.
+
+Tools such as `gfatools` and `odgi` provide broader graph manipulation and
+analysis. `panpathAudit` instead provides a focused, reproducible audit of
+sequence preservation. It does not validate graph topology. Source code and
+issues are available from the [package repository][repository].
+
+# Installation
+
+```{r installation, eval=FALSE}
+if (!requireNamespace("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+BiocManager::install("panpathAudit")
+```
+
+```{r setup}
 library(panpathAudit)
 ```
 
@@ -64,11 +101,14 @@ auditOutcomes(walk_result)[, c(
 
 For an unmapped header such as `chr1`, use:
 
-```{r mapping, eval=FALSE}
+```{r mapping}
+mapped_fasta <- tempfile(fileext = ".fa")
+writeLines(c(">chr1", "ACGTGT"), mapped_fasta)
 mapping <- data.frame(
     mode = "pansn", sample = "sample", haplotype = "1", prefix = ""
 )
-auditGFA("assembly.fa", "graph.gfa", mapping = mapping)
+mapped_result <- auditGFA(mapped_fasta, walk_gfa, mapping = mapping)
+auditOutcomes(mapped_result)[, c("identifier", "status", "record_type")]
 ```
 
 # Comprehensive statistics
@@ -88,12 +128,31 @@ alignment remains a completed outcome and records its reason in
 Argument, input, and operational errors inherit from `panpathAudit_error` and
 carry a `diagnostics` `DataFrame`.
 
-```{r diagnostics, eval=FALSE}
-tryCatch(
-    auditGFA("missing.fa", "graph.gfa"),
+```{r diagnostics}
+diagnostics <- tryCatch(
+    auditGFA(file.path(tempdir(), "missing.fa"), gfa),
     panpathAudit_error = function(error) error$diagnostics
 )
+diagnostics[, c("category", "code", "message")]
 ```
+
+# References {.unnumbered}
+
+- [Graphical Fragment Assembly format specification][gfa-spec]
+- [Pangenome Sequence Naming specification][pansn-spec]
+- [gfatools][gfatools]
+- [odgi][odgi]
+
+[repository]: https://github.com/gkanogiannis/panpathAudit
+[gfa-spec]: https://github.com/GFA-spec/GFA-spec
+[pansn-spec]: https://github.com/pangenome/PanSN-spec
+[gfatools]: https://github.com/lh3/gfatools
+[odgi]: https://github.com/pangenome/odgi
+
+The underlying audit contract is described in Gkanogiannis (2026),
+*Panpath-Audit: Sequence-Level Verification of Embedded Pangenome Paths Against
+Source Assemblies*,
+DOI 10.20944/preprints202608.1872.v1.
 
 # Session information
 

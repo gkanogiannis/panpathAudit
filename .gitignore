@@ -1,13 +1,10 @@
-/cpp-port/
+.DS_Store
 /data
-HANDOFF.md
+/data/
 /*.tar.gz
 /*.Rcheck/
 /*.BiocCheck/
-/.Rd2pdf*/
-/*-manual.pdf
 src/*.o
 src/*.so
 src/*.dll
 src/vendor/**/*.o
-src/symbols.rds

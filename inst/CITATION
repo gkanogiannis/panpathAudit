@@ -1,0 +1,18 @@
+citHeader("To cite panpathAudit:")
+
+bibentry(
+    bibtype = "Article",
+    title = paste(
+        "Panpath-Audit: Sequence-Level Verification of Embedded",
+        "Pangenome Paths Against Source Assemblies"
+    ),
+    author = person("Anestis", "Gkanogiannis",
+        email = "anestis@gkanogiannis.com",
+        comment = c(ORCID = "0000-0002-6441-0688")),
+    year = 2026,
+    journal = "Preprints",
+    volume = "202608.1872",
+    note = "Version 1",
+    doi = "10.20944/preprints202608.1872.v1",
+    url = "https://doi.org/10.20944/preprints202608.1872.v1"
+)
