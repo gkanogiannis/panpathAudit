@@ -1,7 +1,7 @@
 Package: panpathAudit
 Type: Package
 Title: Audit Sequence Preservation in GFA Traversals
-Version: 0.99.1
+Version: 0.99.2
 Authors@R:
     c(person(given = "Anestis",
              family = "Gkanogiannis",
@@ -13,7 +13,7 @@ Description: Audits source FASTA sequences against named paths and
     coordinate-aware walks in GFA files. It reports exact recovery,
     divergence coordinates, digests, and optional base-level statistics.
     Graph topology is not validated.
-License: Apache License (>= 2) + file LICENSE
+License: MIT + file LICENSE
 Encoding: UTF-8
 Language: en-US
 Depends: R (>= 4.6.0)
